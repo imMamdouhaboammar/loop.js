@@ -1,10 +1,21 @@
 import { expect, test } from "bun:test"
-import { stepUsage } from "./claude.ts"
+import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk"
+import { drainSession, stepUsage } from "./claude.ts"
 import { Interruption } from "./executor.ts"
 
-test("unpriced non-zero token usage fails closed as a budget interruption", () => {
+async function* feed(...messages: SDKMessage[]): AsyncGenerator<SDKMessage, void> {
+  for (const message of messages) yield message
+}
+
+test("unpriced non-zero streamed usage fails closed as a budget interruption", async () => {
+  const assistant = {
+    type: "assistant",
+    message: { id: "turn_1", content: [], usage: { input_tokens: 1 } },
+  } as unknown as SDKMessage
+  const gen = drainSession(feed(assistant), "some-future-model")
+
   try {
-    stepUsage({ input_tokens: 1 }, "some-future-model")
+    await gen.next()
     throw new Error("expected unpriced usage to fail closed")
   } catch (err) {
     expect(err).toBeInstanceOf(Interruption)
@@ -13,11 +24,6 @@ test("unpriced non-zero token usage fails closed as a budget interruption", () =
   }
 })
 
-test("an unpriced zero-token step is still free", () => {
-  expect(stepUsage({}, "some-future-model")).toEqual({
-    inputTokens: 0,
-    outputTokens: 0,
-    cachedInputTokens: 0,
-    usd: 0,
-  })
+test("stepUsage keeps zero as its best-effort value for an unpriced model", () => {
+  expect(stepUsage({ input_tokens: 1 }, "some-future-model").usd).toBe(0)
 })
