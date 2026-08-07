@@ -183,9 +183,6 @@ export async function* drainSession(
       }
       case "assistant": {
         if (m.error) throw new Interruption("error", `claude: the model turn failed (${m.error})`)
-        if (!PRICES[model] && hasTokenUsage(m.message.usage)) {
-          throw new Interruption("budget", `unpriced model '${model}' produced token usage`)
-        }
         for (const b of m.message.content) {
           if (b.type === "text") yield { kind: "text", text: b.text }
           else if (b.type === "thinking") yield { kind: "reasoning", text: b.thinking }
@@ -195,6 +192,9 @@ export async function* drainSession(
         // repeating the turn's cumulative usage (contract §Mapping 1). Cost a turn once, on its id.
         if (m.message.id !== turn) {
           turn = m.message.id
+          if (!PRICES[model] && hasTokenUsage(m.message.usage)) {
+            throw new Interruption("budget", `unpriced model '${model}' produced token usage`)
+          }
           const usage = stepUsage(m.message.usage, model)
           derived += usage.usd
           yield { kind: "cost", usage }
