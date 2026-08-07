@@ -116,7 +116,7 @@ export function wrapperCommand(wrapper: string): TaskCommand {
 export function buildTaskXml(opts: { expr: string; dir: string; command: TaskCommand; until: Until }): string {
   const trigger = triggersXml(expr.schtasks.schedule(opts.expr)) // a refused expr throws before anything is installed
   const desc = `${DESC}${opts.expr} ${formatUntil(opts.until)}`
-  return `<?xml version="1.0" encoding="UTF-8"?>
+  return `<?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <RegistrationInfo><Description>${xmlEscape(desc)}</Description></RegistrationInfo>
   ${trigger}
@@ -176,7 +176,9 @@ export function systemSchtasks(): Schtasks {
       const dir = mkdtempSync(join(tmpdir(), "loop-cron-"))
       const file = join(dir, "task.xml")
       try {
-        writeFileSync(file, xml, "utf8")
+        // Match Task Scheduler's native XML representation: UTF-16LE with an explicit BOM.
+        // Without the BOM, `schtasks /Create /XML` cannot reliably determine the byte order.
+        writeFileSync(file, `\uFEFF${xml}`, "utf16le")
         const r = run(["/Create", "/F", "/TN", taskPath, "/XML", file])
         if (r.status !== 0) throw bin.failure("schtasks create", r)
       } finally {
