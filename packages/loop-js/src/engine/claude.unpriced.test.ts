@@ -7,13 +7,14 @@ async function* feed(...messages: SDKMessage[]): AsyncGenerator<SDKMessage, void
   for (const message of messages) yield message
 }
 
-test("unpriced non-zero streamed usage fails closed as a budget interruption", async () => {
+test("unpriced non-zero streamed usage fails closed at the cost boundary", async () => {
   const assistant = {
     type: "assistant",
-    message: { id: "turn_1", content: [], usage: { input_tokens: 1 } },
+    message: { id: "turn_1", content: [{ type: "text", text: "partial" }], usage: { input_tokens: 1 } },
   } as unknown as SDKMessage
   const gen = drainSession(feed(assistant), "some-future-model")
 
+  expect(await gen.next()).toEqual({ done: false, value: { kind: "text", text: "partial" } })
   try {
     await gen.next()
     throw new Error("expected unpriced usage to fail closed")
