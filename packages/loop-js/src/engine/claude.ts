@@ -130,6 +130,17 @@ export type TokenUsage = {
   cache_creation?: { ephemeral_5m_input_tokens?: number | null; ephemeral_1h_input_tokens?: number | null } | null
 }
 
+function hasTokenUsage(u: TokenUsage): boolean {
+  return (
+    (u.input_tokens ?? 0) !== 0 ||
+    (u.output_tokens ?? 0) !== 0 ||
+    (u.cache_creation_input_tokens ?? 0) !== 0 ||
+    (u.cache_read_input_tokens ?? 0) !== 0 ||
+    (u.cache_creation?.ephemeral_5m_input_tokens ?? 0) !== 0 ||
+    (u.cache_creation?.ephemeral_1h_input_tokens ?? 0) !== 0
+  )
+}
+
 export function stepUsage(u: TokenUsage, model: string): StepUsage {
   const inputTokens = u.input_tokens ?? 0
   const outputTokens = u.output_tokens ?? 0
@@ -139,19 +150,14 @@ export function stepUsage(u: TokenUsage, model: string): StepUsage {
   const write5m = u.cache_creation ? (u.cache_creation.ephemeral_5m_input_tokens ?? 0) : written
 
   const p = PRICES[model]
-  if (!p) {
-    const hasTokenUsage = inputTokens !== 0 || outputTokens !== 0 || cachedInputTokens !== 0 || written !== 0
-    if (hasTokenUsage) throw new Interruption("budget", `unpriced model '${model}' produced token usage`)
-    return { inputTokens, outputTokens, cachedInputTokens, usd: 0 }
-  }
-
-  const usd =
-    (inputTokens * p.input +
-      write5m * p.input * WRITE_5M +
-      write1h * p.input * WRITE_1H +
-      cachedInputTokens * p.input * CACHE_READ +
-      outputTokens * p.output) /
-    1e6
+  const usd = p
+    ? (inputTokens * p.input +
+        write5m * p.input * WRITE_5M +
+        write1h * p.input * WRITE_1H +
+        cachedInputTokens * p.input * CACHE_READ +
+        outputTokens * p.output) /
+      1e6
+    : 0 //  an unpriced model derives nothing; drainSession fails closed before this can bypass the guard
   return { inputTokens, outputTokens, cachedInputTokens, usd }
 }
 
@@ -177,6 +183,9 @@ export async function* drainSession(
       }
       case "assistant": {
         if (m.error) throw new Interruption("error", `claude: the model turn failed (${m.error})`)
+        if (!PRICES[model] && hasTokenUsage(m.message.usage)) {
+          throw new Interruption("budget", `unpriced model '${model}' produced token usage`)
+        }
         for (const b of m.message.content) {
           if (b.type === "text") yield { kind: "text", text: b.text }
           else if (b.type === "thinking") yield { kind: "reasoning", text: b.thinking }
