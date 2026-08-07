@@ -126,6 +126,11 @@ export function buildTaskXml(opts: { expr: string; dir: string; command: TaskCom
 </Task>`
 }
 
+/** The exact bytes `schtasks /Create /XML` receives: UTF-16LE plus an explicit byte-order mark. */
+export function taskXmlBytes(xml: string): Buffer {
+  return Buffer.from(`\uFEFF${xml}`, "utf16le")
+}
+
 /** Recover `{ expr, dir, until }` from a task XML we wrote; null if it is not one of ours. */
 export function parseTaskXml(xml: string): Pick<Entry, "expr" | "dir" | "until"> | null {
   const desc = firstMatch(xml, /<Description>([\s\S]*?)<\/Description>/)
@@ -176,9 +181,7 @@ export function systemSchtasks(): Schtasks {
       const dir = mkdtempSync(join(tmpdir(), "loop-cron-"))
       const file = join(dir, "task.xml")
       try {
-        // Match Task Scheduler's native XML representation: UTF-16LE with an explicit BOM.
-        // Without the BOM, `schtasks /Create /XML` cannot reliably determine the byte order.
-        writeFileSync(file, `\uFEFF${xml}`, "utf16le")
+        writeFileSync(file, taskXmlBytes(xml))
         const r = run(["/Create", "/F", "/TN", taskPath, "/XML", file])
         if (r.status !== 0) throw bin.failure("schtasks create", r)
       } finally {
