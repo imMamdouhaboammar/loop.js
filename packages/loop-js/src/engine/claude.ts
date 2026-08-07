@@ -139,14 +139,19 @@ export function stepUsage(u: TokenUsage, model: string): StepUsage {
   const write5m = u.cache_creation ? (u.cache_creation.ephemeral_5m_input_tokens ?? 0) : written
 
   const p = PRICES[model]
-  const usd = p
-    ? (inputTokens * p.input +
-        write5m * p.input * WRITE_5M +
-        write1h * p.input * WRITE_1H +
-        cachedInputTokens * p.input * CACHE_READ +
-        outputTokens * p.output) /
-      1e6
-    : 0 //  an unpriced model derives nothing; the result's `total_cost_usd` reconciles it
+  if (!p) {
+    const hasTokenUsage = inputTokens !== 0 || outputTokens !== 0 || cachedInputTokens !== 0 || written !== 0
+    if (hasTokenUsage) throw new Interruption("budget", `unpriced model '${model}' produced token usage`)
+    return { inputTokens, outputTokens, cachedInputTokens, usd: 0 }
+  }
+
+  const usd =
+    (inputTokens * p.input +
+      write5m * p.input * WRITE_5M +
+      write1h * p.input * WRITE_1H +
+      cachedInputTokens * p.input * CACHE_READ +
+      outputTokens * p.output) /
+    1e6
   return { inputTokens, outputTokens, cachedInputTokens, usd }
 }
 
