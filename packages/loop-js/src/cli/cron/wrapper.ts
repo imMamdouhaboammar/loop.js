@@ -131,7 +131,9 @@ exit $rc
 export function cmdWrapper(entry: Pick<Entry, "id" | "dir" | "until">, cli: string[], installedAt: number): string {
   const { id, dir, until } = entry
   const log = file(dir, id, "\\", ".log")
-  const q = (s: string) => `"${s}"`
+  // `%...%` and `%0`-`%9` are substitutions even inside quotes in batch files. `%%` emits a
+  // literal percent sign, so filesystem/argv strings survive paths such as `C:\work\%TEMP%`.
+  const q = (s: string) => `"${s.replaceAll("%", "%%")}"`
   const argv = (sub: string[]) => [...cli, ...sub].map(q).join(" ")
   const run = `${argv(["run"])} >> ${q(log)} 2>&1`
   const remove = `${argv(["cron", "remove", id])} >> ${q(log)} 2>&1`
